@@ -896,7 +896,7 @@ def main():
             period_days = st.number_input("Days per period", value=int(avg_days) if avg_days else 365, min_value=1)
     else:
         st.warning("⚠️ Could not confidently parse dates from columns")
-        #period_days = st.number_input("Days per period", value=365, min_value=1)
+        period_days = st.number_input("Days per period", value=365, min_value=1)
         frequency = 'unknown'
     
     # Show raw data
