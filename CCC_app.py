@@ -1915,7 +1915,7 @@ def main():
                 st.session_state['forecast_periods'] = num_periods
             
             st.success("✅ Forecast generated successfully!")
-            #st.rerun()
+            st.rerun()
         
         # Display forecast if available
         if 'forecast_data' in st.session_state:
