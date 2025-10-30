@@ -1486,7 +1486,6 @@ def main():
                 options=list(available_vars.keys()),
                 index=0 if 'Sales' in available_vars else 0
             )
-        st.rerun()
         
         with col2:
             var2_name = st.selectbox(
@@ -1494,7 +1493,6 @@ def main():
                 options=list(available_vars.keys()),
                 index=1 if len(available_vars) > 1 else 0
             )
-        st.rerun()
         
         # Calculate growth rates for selected variables
         var1_data = available_vars[var1_name]
