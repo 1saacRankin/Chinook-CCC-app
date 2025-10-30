@@ -895,8 +895,8 @@ def main():
             st.warning(f"⚠️ Could not confidently detect frequency. Average spacing: {avg_days:.0f} days" if avg_days else "⚠️ Could not detect frequency")
             period_days = st.number_input("Days per period", value=int(avg_days) if avg_days else 365, min_value=1)
     else:
-        st.warning("⚠️ Could not parse dates from columns")
-        period_days = st.number_input("Days per period", value=365, min_value=1)
+        st.warning("⚠️ Could not confidently parse dates from columns")
+        #period_days = st.number_input("Days per period", value=365, min_value=1)
         frequency = 'unknown'
     
     # Show raw data
