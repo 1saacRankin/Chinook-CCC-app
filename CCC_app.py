@@ -801,15 +801,20 @@ def main():
         frequency = 'unknown'
     
     # Show raw data
+    # Show raw data
     with st.expander("📄 View Processed Data", expanded=False):
-        st.dataframe(df, use_container_width=True)
+        # Create a copy without attrs to avoid JSON serialization issues
+        df_display = df.copy()
+        if hasattr(df_display, 'attrs'):
+            df_display.attrs = {}
+        st.dataframe(df_display, use_container_width=True)
         
         if show_debug:
             st.write("**Column Info:**")
             st.write(f"Columns: {list(df.columns)}")
             st.write(f"Index (Line Items): {list(df.index[:10])}..." if len(df.index) > 10 else f"Index: {list(df.index)}")
             if hasattr(df, 'attrs') and 'parsed_dates' in df.attrs:
-                st.write(f"Parsed dates: {df.attrs['parsed_dates']}")
+                st.write(f"Parsed dates: {[str(d) for d in df.attrs['parsed_dates']]}")
     
     # Column selection
     st.header("2️⃣ Select Time Periods")
