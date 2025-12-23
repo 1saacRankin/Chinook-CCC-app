@@ -1,6 +1,5 @@
 """
-Cash Conversion Cycle & 3-Statement Financial Model Calculator
-
+Cash Conversion Cycle & 3-Statement Financial Model Calculator - PART 1
 
 Features:
 - Automatic detection of time period frequency (monthly/yearly)
@@ -14,7 +13,7 @@ Features:
 - 3-statement modeling capabilities
 
 Author: Financial Analysis Tool
-Version: 2.2
+Version: 2.3
 """
 
 import streamlit as st
@@ -86,7 +85,7 @@ def parse_date_flexible(date_str):
         (r'(\d{4})-(\d{1,2})$', 
          lambda m: datetime(int(m.group(1)), int(m.group(2)), 1)),
         
-        # Month name/abbrev + 2-4 digit year: Jan 25, Jan-25, Jan 2025, January 2026, jan-26
+        # Month name/abbrev + 2-4 digit year
         (r'\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b[\s\-,]*(\d{2,4})\b', 
          lambda m: parse_month_year(m.group(1), m.group(2))),
         
@@ -94,11 +93,11 @@ def parse_date_flexible(date_str):
         (r'\b(\d{1,2})[\-/](\d{4})\b', 
          lambda m: datetime(int(m.group(2)), int(m.group(1)), 1)),
         
-        # Just a 4-digit year: 2015, 2016, 2025, 2026 (end of year)
-        (r'^\s*(\d{4})(?:\.0)?\s*$',  # Also matches 2015.0
+        # Just a 4-digit year
+        (r'^\s*(\d{4})(?:\.0)?\s*$',
          lambda m: datetime(int(float(m.group(1))), 12, 31)),
         
-        # Just a 2-digit year: 15, 16, 25, 26 (end of year)
+        # Just a 2-digit year
         (r'^\s*(\d{2})(?:\.0)?\s*$', 
          lambda m: parse_two_digit_year(m.group(1))),
     ]
@@ -116,7 +115,6 @@ def parse_date_flexible(date_str):
 
 def parse_month_year(month_str, year_str):
     """Convert month name/abbrev and year to datetime."""
-    # Comprehensive month mapping
     month_map = {
         'jan': 1, 'january': 1,
         'feb': 2, 'february': 2,
@@ -133,11 +131,8 @@ def parse_month_year(month_str, year_str):
     }
     
     month_str_clean = month_str.lower().strip()
-    
-    # Try full match first
     month_num = month_map.get(month_str_clean)
     
-    # If no match, try partial match (for abbreviated versions)
     if month_num is None:
         for key, val in month_map.items():
             if month_str_clean.startswith(key[:3]):
@@ -147,10 +142,8 @@ def parse_month_year(month_str, year_str):
     if month_num is None:
         return None
     
-    # Handle 2-digit vs 4-digit years
     year = int(year_str)
     if year < 100:
-        # Assume 2000s for years 0-49, 1900s for 50-99
         year += 2000 if year < 50 else 1900
     
     return datetime(year, month_num, 1)
@@ -174,17 +167,14 @@ def normalize_column_dates(columns):
     for col in columns:
         parsed = parse_date_flexible(col)
         if parsed:
-            # Check if it looks like a year-only date
             col_str = str(col).strip()
-            # If original is just 4 digits or parsed to Dec 31, show just year
             if (re.match(r'^\d{4}(?:\.0)?$', col_str) or 
                 (parsed.month == 12 and parsed.day == 31)):
                 display = str(parsed.year)
-            # If it's an ISO format with day, show month-year
             elif re.match(r'\d{4}-\d{1,2}-\d{1,2}', col_str):
                 display = parsed.strftime('%b %Y')
             else:
-                display = parsed.strftime('%b %Y')  # e.g., "Jan 2025"
+                display = parsed.strftime('%b %Y')
         else:
             display = str(col)
         
@@ -203,13 +193,9 @@ def detect_time_frequency(dates):
     if len(valid_dates) < 2:
         return 'unknown', None
     
-    # Sort dates
     valid_dates = sorted(valid_dates)
-    
-    # Calculate differences in days
     diffs = [(valid_dates[i+1] - valid_dates[i]).days for i in range(len(valid_dates)-1)]
     
-    # Remove outliers (differences more than 3x median)
     if len(diffs) > 3:
         median_diff = np.median(diffs)
         diffs = [d for d in diffs if d < median_diff * 3]
@@ -220,16 +206,13 @@ def detect_time_frequency(dates):
     avg_diff = np.mean(diffs)
     median_diff = np.median(diffs)
     
-    # Classify based on average difference with tolerance
-    # Use median for more robust classification
-    if 20 <= median_diff <= 45:  # ~30 days ± tolerance
+    if 20 <= median_diff <= 45:
         return 'monthly', avg_diff
-    elif 70 <= median_diff <= 120:  # ~90 days ± tolerance
+    elif 70 <= median_diff <= 120:
         return 'quarterly', avg_diff
-    elif 300 <= median_diff <= 400:  # ~365 days ± tolerance
+    elif 300 <= median_diff <= 400:
         return 'yearly', avg_diff
     else:
-        # Check if it's yearly with wide spacing
         if avg_diff > 250:
             return 'yearly', avg_diff
         return 'unknown', avg_diff
@@ -248,7 +231,8 @@ def load_excel_with_sheets(uploaded_file):
         sheets = {}
         
         for sheet_name in excel_file.sheet_names:
-            df = pd.read_excel(excel_file, sheet_name=sheet_name, header=None)
+            # Read with dtype=str to preserve text in first column
+            df = pd.read_excel(excel_file, sheet_name=sheet_name, header=None, dtype={0: str})
             sheets[sheet_name] = df
         
         return sheets
@@ -265,34 +249,29 @@ def find_header_row(df):
     for idx in range(min(10, len(df))):
         row = df.iloc[idx]
         
-        # Skip if first cell is empty
         if pd.isna(row.iloc[0]):
             continue
         
-        # Check if row contains date patterns (skip first column which is labels)
         date_count = 0
         non_empty_count = 0
         
-        for cell in row.iloc[1:]:  # Skip first column
+        for cell in row.iloc[1:]:
             if pd.notna(cell):
                 non_empty_count += 1
                 if parse_date_flexible(cell) is not None:
                     date_count += 1
         
-        # If more than 50% of non-empty cells are dates, this is likely header
         if non_empty_count > 0 and date_count / non_empty_count > 0.5:
             return idx
         
-        # Check for common header indicators in first cell
         first_cell = str(row.iloc[0]).lower()
         header_keywords = ['line item', 'account', 'description', 'period', 'metric', 'line_item']
         if any(keyword in first_cell for keyword in header_keywords):
-            # Also check if subsequent cells look like dates/years
             year_like = sum(1 for cell in row.iloc[1:] if str(cell).strip().replace('.0', '').isdigit() and len(str(cell).strip().replace('.0', '')) == 4)
-            if year_like >= 3:  # At least 3 year-like values
+            if year_like >= 3:
                 return idx
     
-    return 0  # Default to first row
+    return 0
 
 
 def process_sheet(df):
@@ -307,8 +286,15 @@ def process_sheet(df):
     df.columns = df.iloc[header_row]
     df = df.iloc[header_row + 1:].reset_index(drop=True)
     
-    # First column becomes index (row labels)
+    # First column becomes index (row labels) - keep as string
     first_col_name = df.columns[0]
+    
+    # Ensure first column is string type and clean it
+    df[first_col_name] = df[first_col_name].astype(str).str.strip()
+    
+    # Remove rows where first column is empty, 'nan', or just whitespace
+    df = df[df[first_col_name].notna() & (df[first_col_name] != '') & (df[first_col_name] != 'nan')]
+    
     df = df.set_index(first_col_name)
     df.index.name = 'Line_Item'
     
@@ -316,7 +302,7 @@ def process_sheet(df):
     df = df.dropna(how='all', axis=0)
     df = df.dropna(how='all', axis=1)
     
-    # Get remaining columns (excluding the index)
+    # Get remaining columns
     data_columns = df.columns
     
     # Normalize column names (dates)
@@ -353,7 +339,6 @@ def combine_sheets(sheets_dict):
     if not sheets_dict:
         return None
     
-    # Process each sheet
     processed_sheets = {}
     for name, df in sheets_dict.items():
         processed = process_sheet(df)
@@ -363,22 +348,17 @@ def combine_sheets(sheets_dict):
     if not processed_sheets:
         return None
     
-    # If only one valid sheet, return it
     if len(processed_sheets) == 1:
         return list(processed_sheets.values())[0]
     
-    # Combine multiple sheets
-    # Strategy: concatenate all unique columns, merge on index
     combined = None
     
     for sheet_name, df in processed_sheets.items():
         if combined is None:
             combined = df.copy()
         else:
-            # Merge on index, keeping all rows and columns
             combined = combined.join(df, how='outer', rsuffix=f'_{sheet_name}')
     
-    # Sort columns by date if possible
     if hasattr(combined, 'attrs') and 'parsed_dates' in combined.attrs:
         try:
             col_dates = combined.attrs['parsed_dates']
@@ -428,13 +408,11 @@ def fuzzy_match_row(df, search_terms, threshold=0.6):
         
         # Fuzzy match
         for cleaned_idx, original_idx in cleaned_index.items():
-            # Calculate simple similarity score
             if cleaned_term in cleaned_idx:
                 score = len(cleaned_term) / len(cleaned_idx)
             elif cleaned_idx in cleaned_term:
                 score = len(cleaned_idx) / len(cleaned_term)
             else:
-                # Word overlap
                 term_words = set(cleaned_term.split())
                 idx_words = set(cleaned_idx.split())
                 if term_words and idx_words:
@@ -456,7 +434,6 @@ def auto_detect_variables(df):
     Returns dict mapping variable names to row labels.
     """
     search_map = {
-        # Classics
         'Sales': ['sales', 'revenue', 'total revenue', 'net revenue', 'total sales'],
         'COGS': ['cogs', 'cost of goods sold', 'cost of sales', 'cost of revenue'],
         'Gross Profit': ['gross profit', 'gross margin', 'gross income'],
@@ -465,8 +442,6 @@ def auto_detect_variables(df):
         'Depreciation': ['depreciation', 'depr', 'depreciation and amortization', 'da', 'd&a'],
         'Interest Expense': ['interest expense', 'interest', 'interest paid'],
         'Net Income': ['net income', 'net profit', 'net earnings', 'profit'],
-        
-        # Balance Sheet - Assets
         'Cash': ['cash', 'cash and cash equivalents', 'cash and equivalents'],
         'Accounts Receivable': ['accounts receivable', 'receivables', 'ar', 'trade receivables'],
         'Inventory': ['inventory', 'inventories', 'finished goods'],
@@ -475,8 +450,6 @@ def auto_detect_variables(df):
         'Current Assets': ['current assets', 'total current assets'],
         'Fixed Assets': ['fixed assets', 'ppe', 'property plant equipment', 'net fixed assets', 'fixed assets net'],
         'Total Assets': ['total assets', 'assets'],
-        
-        # Balance Sheet - Liabilities
         'Accounts Payable': ['accounts payable', 'payables', 'ap', 'trade payables'],
         'Deferred Income': ['deferred income', 'deferred revenue', 'unearned revenue'],
         'Accrued Expenses': ['accrued expenses', 'accrued liabilities', 'accruals'],
@@ -484,8 +457,6 @@ def auto_detect_variables(df):
         'Long Term Debt': ['long term debt', 'long term liabilities', 'lt debt', 'long term borrowings'],
         'Short Term Debt': ['short term debt', 'short term borrowings', 'st debt', 'current debt'],
         'Total Liabilities': ['total liabilities', 'liabilities'],
-        
-        # Equity
         'Equity': ['equity', 'shareholders equity', 'stockholders equity', 'total equity'],
         'Retained Earnings': ['retained earnings', 'retained', 'accumulated earnings'],
     }
@@ -510,23 +481,11 @@ def get_row_data(df, row_label, default=0.0):
 # ============================================================================
 
 def calculate_ccc_metrics(sales, cogs, ar, ap, inventory, wip, deferred_income, period_days):
-    """
-    Calculate Cash Conversion Cycle and components.
-    
-    CCC = DSO + DIO - DPO
-    where:
-    - DSO (Days Sales Outstanding) = (AR / Sales) * 365
-    - DIO (Days Inventory Outstanding) = ((Inventory + WIP) / COGS) * 365
-    - DPO (Days Payable Outstanding) = (AP / COGS) * 365
-    
-    Deferred income reduces effective AR (cash collected but not yet earned)
-    """
+    """Calculate Cash Conversion Cycle and components."""
     with np.errstate(divide='ignore', invalid='ignore'):
-        # Adjust AR for deferred income (cash already collected)
         effective_ar = ar - deferred_income
-        effective_ar = effective_ar.clip(lower=0)  # Can't be negative
+        effective_ar = effective_ar.clip(lower=0)
         
-        # Calculate components
         dso = (effective_ar / sales) * 365
         dso = dso.replace([np.inf, -np.inf], np.nan)
         
@@ -548,55 +507,42 @@ def calculate_ccc_metrics(sales, cogs, ar, ap, inventory, wip, deferred_income, 
 
 
 def calculate_financial_ratios(df_data):
-    """
-    Calculate comprehensive financial ratios.
-    
-    Input: dict with keys like 'Sales', 'AR', 'AP', etc.
-    Returns: dict of ratio series
-    """
+    """Calculate comprehensive financial ratios."""
     ratios = {}
     
-    # AR Turnover = Sales / AR
     if 'Sales' in df_data and 'AR' in df_data:
         with np.errstate(divide='ignore', invalid='ignore'):
             ratios['AR_Turnover'] = df_data['Sales'] / df_data['AR']
             ratios['AR_Turnover'] = ratios['AR_Turnover'].replace([np.inf, -np.inf], np.nan)
     
-    # AP Turnover = COGS / AP
     if 'COGS' in df_data and 'AP' in df_data:
         with np.errstate(divide='ignore', invalid='ignore'):
             ratios['AP_Turnover'] = df_data['COGS'] / df_data['AP']
             ratios['AP_Turnover'] = ratios['AP_Turnover'].replace([np.inf, -np.inf], np.nan)
     
-    # Inventory Turnover = COGS / (Inventory + WIP)
     if 'COGS' in df_data and 'Total_Inventory' in df_data:
         with np.errstate(divide='ignore', invalid='ignore'):
             ratios['Inventory_Turnover'] = df_data['COGS'] / df_data['Total_Inventory']
             ratios['Inventory_Turnover'] = ratios['Inventory_Turnover'].replace([np.inf, -np.inf], np.nan)
     
-    # Debt to Equity = Total Debt / Equity
     if 'Total_Debt' in df_data and 'Equity' in df_data:
         with np.errstate(divide='ignore', invalid='ignore'):
             ratios['Debt_to_Equity'] = df_data['Total_Debt'] / df_data['Equity']
             ratios['Debt_to_Equity'] = ratios['Debt_to_Equity'].replace([np.inf, -np.inf], np.nan)
     
-    # Debt Service Coverage Ratio = EBITDA / Interest Expense
     if 'EBITDA' in df_data and 'Interest_Expense' in df_data:
         with np.errstate(divide='ignore', invalid='ignore'):
             ratios['Debt_Service_Coverage'] = df_data['EBITDA'] / df_data['Interest_Expense']
             ratios['Debt_Service_Coverage'] = ratios['Debt_Service_Coverage'].replace([np.inf, -np.inf], np.nan)
     
-    # Current Ratio = Current Assets / Current Liabilities
     if 'Current_Assets' in df_data and 'Current_Liabilities' in df_data:
         with np.errstate(divide='ignore', invalid='ignore'):
             ratios['Current_Ratio'] = df_data['Current_Assets'] / df_data['Current_Liabilities']
             ratios['Current_Ratio'] = ratios['Current_Ratio'].replace([np.inf, -np.inf], np.nan)
     
-    # Working Capital = Current Assets - Current Liabilities
     if 'Current_Assets' in df_data and 'Current_Liabilities' in df_data:
         ratios['Working_Capital'] = df_data['Current_Assets'] - df_data['Current_Liabilities']
     
-    # Quick Ratio = (Current Assets - Inventory) / Current Liabilities
     if 'Current_Assets' in df_data and 'Total_Inventory' in df_data and 'Current_Liabilities' in df_data:
         with np.errstate(divide='ignore', invalid='ignore'):
             ratios['Quick_Ratio'] = (df_data['Current_Assets'] - df_data['Total_Inventory']) / df_data['Current_Liabilities']
@@ -606,23 +552,12 @@ def calculate_financial_ratios(df_data):
 
 
 def calculate_growth_rates(series):
-    """
-    Calculate period-over-period growth rates.
-    Returns series of growth rates and statistics dict.
-    """
+    """Calculate period-over-period growth rates."""
     growth_rates = series.pct_change()
-    
-    # Remove infinite and NaN values for statistics
     valid_rates = growth_rates.replace([np.inf, -np.inf], np.nan).dropna()
     
     if len(valid_rates) == 0:
-        stats = {
-            'mean': 0,
-            'median': 0,
-            'min': 0,
-            'max': 0,
-            'std': 0
-        }
+        stats = {'mean': 0, 'median': 0, 'min': 0, 'max': 0, 'std': 0}
     else:
         stats = {
             'mean': valid_rates.mean(),
@@ -635,27 +570,11 @@ def calculate_growth_rates(series):
     return growth_rates, stats
 
 
-def convert_annual_to_monthly_rate(annual_rate):
-    """Convert annual growth rate to equivalent monthly rate."""
-    return (1 + annual_rate) ** (1/12) - 1
-
-
 def forecast_series(historical_series, num_periods, growth_rate):
-    """
-    Forecast future values using compound growth rate.
-    
-    Args:
-        historical_series: pandas Series of historical data
-        num_periods: number of periods to forecast
-        growth_rate: growth rate per period (e.g., 0.10 for 10%)
-    
-    Returns:
-        pandas Series of forecasted values
-    """
+    """Forecast future values using compound growth rate."""
     last_value = historical_series.iloc[-1]
     
     if pd.isna(last_value) or last_value == 0:
-        # Use second-to-last or mean
         valid_values = historical_series.dropna()
         if len(valid_values) > 0:
             last_value = valid_values.iloc[-1]
@@ -670,8 +589,23 @@ def forecast_series(historical_series, num_periods, growth_rate):
     return pd.Series(forecast_values)
 
 
-# ============================================================================
-# VISUALIZATION
+
+
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    # ============================================================================
+# VISUALIZATION FUNCTIONS (continued from Part 1)
 # ============================================================================
 
 def create_time_series_chart(data_dict, title, ylabel="Value", height=400):
@@ -697,13 +631,7 @@ def create_time_series_chart(data_dict, title, ylabel="Value", height=400):
         hovermode='x unified',
         height=height,
         template='plotly_white',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     
     return fig
@@ -713,44 +641,31 @@ def create_forecast_comparison_chart(historical, forecast, metric_name, ylabel="
     """Create chart comparing historical and forecast data."""
     fig = go.Figure()
     
-    # Historical
     fig.add_trace(go.Scatter(
-        x=historical.index,
-        y=historical.values,
-        mode='lines+markers',
-        name='Historical',
-        line=dict(color='#3b82f6', width=3),
-        marker=dict(size=8)
+        x=historical.index, y=historical.values,
+        mode='lines+markers', name='Historical',
+        line=dict(color='#3b82f6', width=3), marker=dict(size=8)
     ))
     
-    # Forecast
     fig.add_trace(go.Scatter(
-        x=forecast.index,
-        y=forecast.values,
-        mode='lines+markers',
-        name='Forecast',
+        x=forecast.index, y=forecast.values,
+        mode='lines+markers', name='Forecast',
         line=dict(color='#8b5cf6', width=3, dash='dash'),
         marker=dict(size=8, symbol='diamond')
     ))
     
-    # Connection line between last historical and first forecast
     if len(historical) > 0 and len(forecast) > 0:
         fig.add_trace(go.Scatter(
             x=[historical.index[-1], forecast.index[0]],
             y=[historical.values[-1], forecast.values[0]],
-            mode='lines',
-            line=dict(color='gray', width=1, dash='dot'),
-            showlegend=False,
-            hoverinfo='skip'
+            mode='lines', line=dict(color='gray', width=1, dash='dot'),
+            showlegend=False, hoverinfo='skip'
         ))
     
     fig.update_layout(
         title=f'{metric_name}: Historical vs Forecast',
-        xaxis_title='Period',
-        yaxis_title=ylabel,
-        hovermode='x unified',
-        height=450,
-        template='plotly_white'
+        xaxis_title='Period', yaxis_title=ylabel,
+        hovermode='x unified', height=450, template='plotly_white'
     )
     
     return fig
@@ -758,7 +673,6 @@ def create_forecast_comparison_chart(historical, forecast, metric_name, ylabel="
 
 def create_ratio_dashboard(ratios_dict):
     """Create multi-panel ratio visualization."""
-    # Select key ratios to display
     key_ratios = ['AR_Turnover', 'AP_Turnover', 'Debt_to_Equity', 'Current_Ratio']
     available_ratios = {k: v for k, v in ratios_dict.items() if k in key_ratios and not v.isna().all()}
     
@@ -768,11 +682,7 @@ def create_ratio_dashboard(ratios_dict):
     n_ratios = len(available_ratios)
     rows = (n_ratios + 1) // 2
     
-    fig = make_subplots(
-        rows=rows, 
-        cols=2,
-        subplot_titles=list(available_ratios.keys())
-    )
+    fig = make_subplots(rows=rows, cols=2, subplot_titles=list(available_ratios.keys()))
     
     colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444']
     
@@ -782,22 +692,15 @@ def create_ratio_dashboard(ratios_dict):
         
         fig.add_trace(
             go.Scatter(
-                x=series.index,
-                y=series.values,
-                mode='lines+markers',
-                name=name,
+                x=series.index, y=series.values,
+                mode='lines+markers', name=name,
                 line=dict(color=colors[idx % len(colors)], width=2),
-                marker=dict(size=6),
-                showlegend=False
+                marker=dict(size=6), showlegend=False
             ),
             row=row, col=col
         )
     
-    fig.update_layout(
-        height=300 * rows,
-        template='plotly_white',
-        title_text="Financial Ratios Dashboard"
-    )
+    fig.update_layout(height=300 * rows, template='plotly_white', title_text="Financial Ratios Dashboard")
     
     return fig
 
@@ -860,7 +763,6 @@ def main():
         st.error("Failed to load Excel file")
         return
     
-    # Show sheet information
     st.success(f"✅ Loaded {len(sheets_dict)} sheet(s): {', '.join(sheets_dict.keys())}")
     
     # Combine sheets
@@ -884,7 +786,6 @@ def main():
         else:
             st.info(f"**Detected Time Period**: {frequency.upper()}")
         
-        # Set period days based on frequency
         if frequency == 'monthly':
             period_days = 30
         elif frequency == 'quarterly':
@@ -906,7 +807,7 @@ def main():
         if show_debug:
             st.write("**Column Info:**")
             st.write(f"Columns: {list(df.columns)}")
-            st.write(f"Index: {list(df.index[:10])}..." if len(df.index) > 10 else f"Index: {list(df.index)}")
+            st.write(f"Index (Line Items): {list(df.index[:10])}..." if len(df.index) > 10 else f"Index: {list(df.index)}")
             if hasattr(df, 'attrs') and 'parsed_dates' in df.attrs:
                 st.write(f"Parsed dates: {df.attrs['parsed_dates']}")
     
@@ -935,7 +836,6 @@ def main():
     with st.spinner("Auto-detecting line items..."):
         auto_mapping = auto_detect_variables(df)
     
-    # Show mapping status
     detected_count = sum(1 for v in auto_mapping.values() if v is not None)
     st.info(f"Auto-detected {detected_count} out of 23 line items")
     
@@ -1160,14 +1060,8 @@ def main():
             
             # Calculate CCC metrics
             ccc_metrics = calculate_ccc_metrics(
-                data['Sales'], 
-                data['COGS'], 
-                data['AR'], 
-                data['AP'], 
-                data['Inventory'], 
-                data['WIP'], 
-                data['Deferred_Income'],
-                period_days
+                data['Sales'], data['COGS'], data['AR'], data['AP'], 
+                data['Inventory'], data['WIP'], data['Deferred_Income'], period_days
             )
             
             data.update(ccc_metrics)
@@ -1187,26 +1081,8 @@ def main():
             st.session_state['frequency'] = frequency
             st.session_state['sales_growth_stats'] = sales_growth_stats
             st.session_state['cogs_growth_stats'] = cogs_growth_stats
-            
-            # Store mappings for forecast
-            st.session_state['mappings'] = {
-                'sales_row': sales_row,
-                'cogs_row': cogs_row,
-                'ar_row': ar_row,
-                'ap_row': ap_row,
-                'inventory_row': inventory_row,
-                'wip_row': wip_row,
-                'deferred_income_row': deferred_income_row,
-                'net_income_row': net_income_row,
-                'depreciation_row': depreciation_row,
-                'opex_row': opex_row,
-                'equity_row': equity_row,
-                'long_debt_row': long_debt_row,
-                'short_debt_row': short_debt_row
-            }
         
         st.success("✅ Calculations complete!")
-        #st.rerun()
     
     # Display results if available
     if 'data' not in st.session_state:
@@ -1278,9 +1154,9 @@ def main():
     # Tabs for different analyses
     tab1, tab2, tab3, tab4 = st.tabs([
         "📊 CCC Analysis",
-        "📊 Financial Ratios",
-        "📈 Growth Analysis",
-        "📈 Forecasting"
+        "📈 Financial Ratios",
+        "📉 Growth Analysis",
+        "🔮 Forecasting"
     ])
     
     # ========================================================================
@@ -1351,25 +1227,19 @@ def main():
                 hide_index=True
             )
         
-        # with col2:
-        #     st.markdown("**CCC Interpretation:**")
-        #     st.markdown("""
-        #     - **DSO**: Average days to collect receivables
-        #     - **DIO**: Average days inventory is held
-        #     - **DPO**: Average days to pay suppliers
-        #     - **CCC = DSO + DIO - DPO**: Net days cash is tied up
+        with col2:
+            st.markdown("**CCC Interpretation:**")
+            st.markdown("""
+            - **DSO**: Average days to collect receivables
+            - **DIO**: Average days inventory is held
+            - **DPO**: Average days to pay suppliers
+            - **CCC = DSO + DIO - DPO**: Net days cash is tied up
             
-        #     **Lower CCC is generally better** (faster cash conversion)
-        #     """)
+            **Lower CCC is generally better** (faster cash conversion)
+            """)
         
         # Working Capital breakdown
         st.subheader("Working Capital Components")
-        
-        wc_data = {
-            'Accounts Receivable': data['AR'],
-            'Inventory + WIP': data['Total_Inventory'],
-            'Accounts Payable': data['AP']
-        }
         
         fig_wc = go.Figure()
         
@@ -1399,21 +1269,15 @@ def main():
         fig_wc.add_trace(go.Scatter(
             x=net_wc.index,
             y=net_wc.values,
-            name='AR + Inv - AP',
+            name='Net WC (AR + Inv - AP)',
             mode='lines+markers',
-            line=dict(color='#ef4444', width=3)#,
-            #yaxis='y2'
+            line=dict(color='#ef4444', width=3)
         ))
         
         fig_wc.update_layout(
             title='Working Capital Components',
             xaxis_title='Period',
             yaxis_title='Amount ($)',
-            yaxis2=dict(
-                title='',
-                overlaying='y',
-                side='right'
-            ),
             barmode='relative',
             height=500,
             template='plotly_white',
@@ -1441,7 +1305,6 @@ def main():
         ratios_df = pd.DataFrame(ratios)
         
         if not ratios_df.empty:
-            # Format and display
             st.dataframe(
                 ratios_df.style.format("{:.2f}"),
                 use_container_width=True
@@ -1607,7 +1470,7 @@ def main():
             st.plotly_chart(fig_growth2, use_container_width=True)
         
         # Comparison chart
-        st.markdown("### 📈 Growth Rate Comparison")
+        st.markdown("### 🔀 Growth Rate Comparison")
         
         fig_compare = go.Figure()
         
@@ -1642,49 +1505,58 @@ def main():
         if len(var1_data) > 2 and len(var2_data) > 2:
             st.markdown("### Relationship Analysis")
             
-            # Align the two series
-            aligned_data = pd.DataFrame({
-                var1_name: var1_data,
-                var2_name: var2_data
-            }).dropna()
-            
-            if len(aligned_data) > 2:
-                correlation = aligned_data.corr().iloc[0, 1]
+            # Check if variables are different
+            if var1_name == var2_name:
+                st.info("Select two different variables to see correlation analysis.")
+            else:
+                # Align the two series
+                aligned_data = pd.DataFrame({
+                    var1_name: var1_data,
+                    var2_name: var2_data
+                }).dropna()
                 
-                col1, col2 = st.columns([1, 2])
-                
-                with col1:
-                    st.metric("Correlation Coefficient", f"{correlation:.3f}")
-                    
-                    if abs(correlation) > 0.7:
-                        st.success("Strong correlation")
-                    elif abs(correlation) > 0.4:
-                        st.info("Moderate correlation")
+                if len(aligned_data) > 2:
+                    # Check that we actually have two columns
+                    if aligned_data.shape[1] >= 2:
+                        correlation = aligned_data.corr().iloc[0, 1]
+                        
+                        col1, col2 = st.columns([1, 2])
+                        
+                        with col1:
+                            st.metric("Correlation Coefficient", f"{correlation:.3f}")
+                            
+                            if abs(correlation) > 0.7:
+                                st.success("Strong correlation")
+                            elif abs(correlation) > 0.4:
+                                st.info("Moderate correlation")
+                            else:
+                                st.warning("Weak correlation")
+                        
+                        with col2:
+                            # Scatter plot
+                            fig_scatter = go.Figure()
+                            fig_scatter.add_trace(go.Scatter(
+                                x=aligned_data[var2_name],
+                                y=aligned_data[var1_name],
+                                mode='markers',
+                                marker=dict(size=10, color='#8b5cf6'),
+                                text=aligned_data.index,
+                                hovertemplate=f'<b>%{{text}}</b><br>{var2_name}: %{{x:,.0f}}<br>{var1_name}: %{{y:,.0f}}<extra></extra>'
+                            ))
+                            
+                            fig_scatter.update_layout(
+                                title=f'{var1_name} vs {var2_name}',
+                                xaxis_title=var2_name,
+                                yaxis_title=var1_name,
+                                height=350,
+                                template='plotly_white'
+                            )
+                            
+                            st.plotly_chart(fig_scatter, use_container_width=True)
                     else:
-                        st.warning("Weak correlation")
+                        st.warning("Unable to calculate correlation. Please select two different variables.")
+                        
                 
-                with col2:
-                    # Scatter plot
-                    fig_scatter = go.Figure()
-                    fig_scatter.add_trace(go.Scatter(
-                        x=aligned_data[var2_name],
-                        y=aligned_data[var1_name],
-                        mode='markers',
-                        marker=dict(size=10, color='#8b5cf6'),
-                        text=aligned_data.index,
-                        hovertemplate=f'<b>%{{text}}</b><br>{var2_name}: %{{x:,.0f}}<br>{var1_name}: %{{y:,.0f}}<extra></extra>'
-                    ))
-                    
-                    fig_scatter.update_layout(
-                        title=f'{var1_name} vs {var2_name}',
-                        xaxis_title=var2_name,
-                        yaxis_title=var1_name,
-                        height=350,
-                        template='plotly_white'
-                    )
-                    
-                    st.plotly_chart(fig_scatter, use_container_width=True)
-    
     # ========================================================================
     # TAB 4: FORECASTING
     # ========================================================================
@@ -1785,9 +1657,8 @@ def main():
             ) / 100
             
             depreciation_annual = st.number_input(
-                "Depreciation",
+                "Depreciation (per year)",
                 min_value=0.0,
-                #value=float(data['Depreciation'].sum()) if data['Depreciation'].sum() > 0 else 10000.0,
                 value=float(data['Depreciation'].mean()) if data['Depreciation'].mean() > 0 else 10000.0,
                 step=1000.0
             )
@@ -1820,7 +1691,6 @@ def main():
                 last_date_str = str(data['Sales'].index[-1])
                 
                 if frequency == 'monthly':
-                    # Parse the last date to get starting point
                     try:
                         last_parsed = parse_date_flexible(last_date_str)
                         if last_parsed:
@@ -1832,14 +1702,12 @@ def main():
                         fcst_index = [f"Fcst {i+1}" for i in range(num_periods)]
                 
                 elif frequency == 'yearly':
-                    # Extract year and increment
                     try:
                         last_parsed = parse_date_flexible(last_date_str)
                         if last_parsed:
                             last_year = last_parsed.year
                             fcst_index = [f"{last_year + i + 1}" for i in range(num_periods)]
                         else:
-                            # Try to extract year from string
                             year_match = re.search(r'(\d{4})', last_date_str)
                             if year_match:
                                 last_year = int(year_match.group(1))
